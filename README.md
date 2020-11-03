@@ -12,7 +12,7 @@ Package to download and analyse *League of Legends* match data from specific Sum
 ## Usage:
 Two backend methods currently implemented. Both should be run in the command line, from the root folder. 
 ### Update static assets for champions, queues and maps:  
-    `python -m backend.assets`  
+    python -m backend.assets  
 
 ### Download all matches from specific summoners:  
     python -m backend.downloader [-m <mode>] -s <SummonerName1> <SummonerName2> ...  
