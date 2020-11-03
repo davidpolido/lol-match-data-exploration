@@ -73,5 +73,9 @@ def get_matchlist(watcher, summoner):
             attempt += 1
 
 
-def get_full_match_info(watcher, game_id):
-    return watcher.match.by_id(region=REGION, match_id=game_id)
+def get_match_data(watcher, game_id):
+    try:
+        match_data = watcher.match.by_id(region=REGION, match_id=game_id)
+    except ApiError as err:
+        print(err.response.status_code)
+    return match_data
