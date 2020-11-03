@@ -1,0 +1,8 @@
+__pycache__/
+.ipynb_chekpoints/
+.vscode/
+backend/.env
+tasks.md
+.DS_Store
+legacy/
+exploration.ipynb
