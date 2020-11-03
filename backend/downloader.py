@@ -87,7 +87,8 @@ def get_clean_match_data(watcher, matchlist):
             counter += 1
             game_ids.pop(0)
 
-        except:
+        except Exception as e:
+            print(e)
             fail_count += 1
             print(f"Error in match #{counter} (id: <{game_ids[0]})>.")
             if fail_count % 5 == 0:
