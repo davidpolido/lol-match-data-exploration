@@ -4,7 +4,9 @@ Package to download and analyse *League of Legends* match data from specific Sum
 
 ## Setup:  
 1) Get your api_key from https://developer.riotgames.com/ and replace the placholder with it in `.env-example` file inside the backend folder.  
-2) Rename `.env-example` into `.env` in the backend folder.
+2) Rename `.env-example` into `.env` in the backend folder.  
+3) (Optionally create virtual environment...).  
+4) Run `pip install -r requirements.txt`.
   
 
 ## Usage:
