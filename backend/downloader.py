@@ -98,7 +98,7 @@ def get_clean_match_data(watcher, matchlist):
     # Transform lists into object of dataframes
     new_data_obj = {}
     new_data_obj["match_details"] = pd.DataFrame(match_details)
-    new_data_obj["teams"] = pd.json_normalize(teams)
+    new_data_obj["teams"] = pd.json_normalize(teams).rename(columns=lambda x: x.replace(".", "_"))
     new_data_obj["participants"] = pd.json_normalize(participants)
     new_data_obj["participant_identities"] = pd.json_normalize(participant_identities)
     print(f"Finished processing {counter-1} matches.")
@@ -143,6 +143,12 @@ def get_data(summoner_names, mode="update"):
                 [matchlist, requests.get_matchlist(watcher, summoner)]
             )
     print(f"Total downloaded match ids: {len(matchlist)}.")
+
+    # Early exit if no matches can be found
+    if len(matchlist) == 0:
+        print("No matches available from provided Summoner(s). Exiting.")
+        db.close_connection(conn)
+        return
 
     # Check if match_details table exists in db: if not, do full download
     # TODO: Decide what to do when any of the tables are missing. Add checks here.
