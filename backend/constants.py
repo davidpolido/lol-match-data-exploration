@@ -29,7 +29,7 @@ ASSETS = [
 ]
 
 TABLE_PRIMARY_KEYS = {
-    "game_details": ["gameId"],
+    "match_details": ["gameId"],
     "teams": ["gameId", "teamId"],
     "participants": ["gameId", "participantId"],
     "participant_identities": ["gameId", "participantId"],

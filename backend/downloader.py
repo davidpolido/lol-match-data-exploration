@@ -7,8 +7,8 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 
-from . import db
-from . import requests
+from .db import Database
+from .requests import Requests
 from .constants import TABLE_PRIMARY_KEYS, MATCH_DETAILS_KEYS
 
 
@@ -19,11 +19,16 @@ load_dotenv(dotenv_path=ENV_PATH)
 DB_PATH = os.environ["NORMALIZED_DB_PATH"]
 
 
-def get_unprocessed_matchlist(matchlist, conn):
-    match_details = db.read_full_table(conn, "match_details")
+def get_unprocessed_matchlist(matchlist):
+    with Database(DB_PATH) as db:
+        match_details = db.read_full_table("match_details")
 
     unprocessed_matchlist = pd.merge(
-        matchlist, match_details["gameId"], on="gameId", how="outer", indicator=True,
+        matchlist,
+        match_details["gameId"],
+        on="gameId",
+        how="outer",
+        indicator=True,
     ).query('_merge=="left_only"')
 
     unprocessed_matchlist = (
@@ -50,7 +55,7 @@ def process_teams(team_obj, game_id):
     return team_obj
 
 
-def get_clean_match_data(watcher, matchlist):
+def get_clean_match_data(matchlist, r):
     match_details = []
     teams = []
     participants = []
@@ -64,7 +69,7 @@ def get_clean_match_data(watcher, matchlist):
     while len(game_ids) > 0:
         # Get full object with match data, by game id
         try:
-            match_data = requests.get_match_data(watcher, game_ids[0])
+            match_data = r.get_match_data(game_ids[0])
             match_details.append(process_basic_match_info(match_data))
 
             # Get teams list
@@ -98,7 +103,9 @@ def get_clean_match_data(watcher, matchlist):
     # Transform lists into object of dataframes
     new_data_obj = {}
     new_data_obj["match_details"] = pd.DataFrame(match_details)
-    new_data_obj["teams"] = pd.json_normalize(teams).rename(columns=lambda x: x.replace(".", "_"))
+    new_data_obj["teams"] = pd.json_normalize(teams).rename(
+        columns=lambda x: x.replace(".", "_")
+    )
     new_data_obj["participants"] = pd.json_normalize(participants)
     new_data_obj["participant_identities"] = pd.json_normalize(participant_identities)
     print(f"Finished processing {counter-1} matches.")
@@ -106,8 +113,9 @@ def get_clean_match_data(watcher, matchlist):
     return new_data_obj
 
 
-def update_df_indexes(conn, df, table_name):
-    df.index += db.read_last_index(conn, table_name) + 1
+def update_df_indexes(df, table_name):
+    with Database(DB_PATH) as db:
+        df.index += db.read_last_index(table_name) + 1
     return df
 
 
@@ -125,74 +133,59 @@ def update_df_indexes(conn, df, table_name):
 
 def get_data(summoner_names, mode="update"):
 
-    # Start db connection
-    conn = db.create_connection(DB_PATH)
-
     # Instantiate watcher
-    watcher = requests.instantiate_watcher()
-
-    # Get single/multiple summoner information & matchlist from API
-    if isinstance(summoner_names, str):
-        summoner = requests.get_summoner(watcher, summoner_names)
-        matchlist = requests.get_matchlist(watcher, summoner)
-    else:
-        summoners = requests.get_summoners(watcher, summoner_names)
-        matchlist = pd.DataFrame()
-        for summoner in summoners:
-            matchlist = pd.concat(
-                [matchlist, requests.get_matchlist(watcher, summoner)]
-            )
-    print(f"Total downloaded match ids: {len(matchlist)}.")
+    r = Requests()
+    summoners = r.get_summoners(summoner_names)
+    matchlist = pd.DataFrame(r.get_all_matchlists())
 
     # Early exit if no matches can be found
     if len(matchlist) == 0:
         print("No matches available from provided Summoner(s). Exiting.")
-        db.close_connection(conn)
         return
 
     # Check if match_details table exists in db: if not, do full download
     # TODO: Decide what to do when any of the tables are missing. Add checks here.
     # TODO: Maybe add looping to require y/n answer?
-    if not db.check_if_table_exists(conn, "match_details"):
-        print("No <match_details> table found in db. One will be created.")
-        mode = "replace"
+    with Database(DB_PATH) as db:
+        if not db.check_if_table_exists("match_details"):
+            print("No <match_details> table found in db. One will be created.")
+            mode = "replace"
 
     # For "update" mode, get differences between matchlist and DB;
     # Other modes want full matchlist from summoners
     unprocessed_matchlist = (
-        get_unprocessed_matchlist(matchlist, conn) if mode == "update" else matchlist
+        get_unprocessed_matchlist(matchlist) if mode == "update" else matchlist
     )
 
     # If there are no matches to get data of, exit
     if len(unprocessed_matchlist) == 0:
         print("No new matches to process from provided Summoner(s). Exiting.")
-        db.close_connection(conn)
         return
 
     # Get all dfs (match_details, teams, participants, participant_identities)
-    new_data_obj = get_clean_match_data(watcher, unprocessed_matchlist)
+    new_data_obj = get_clean_match_data(unprocessed_matchlist, r)
 
     if mode == "replace":
         # Write to DB
         for table_name in new_data_obj:
-            db.write_full_table(conn, table_name, new_data_obj[table_name])
+            with Database(DB_PATH) as db:
+                db.write_full_table(table_name, new_data_obj[table_name])
 
         print("DB fully updated.")
-        db.close_connection(conn)
 
     elif mode == "update":
         # Make indexes continue from existing ones
         for table_name in new_data_obj:
             new_data_obj[table_name] = update_df_indexes(
-                conn, new_data_obj[table_name], table_name
+                new_data_obj[table_name], table_name
             )
 
         # Write to DB
         for table_name in new_data_obj:
-            db.append_to_table(conn, table_name, new_data_obj[table_name])
+            with Database(DB_PATH) as db:
+                db.append_to_table(table_name, new_data_obj[table_name])
 
         print(f"Data on {len(new_data_obj['match_details'])} matches downloaded.")
-        db.close_connection(conn)
 
     elif mode == "output":
         return new_data_obj
@@ -208,7 +201,11 @@ def parse_arguments():
         help="the mode to run the downloader (update, replace, output)",
     )
     parser.add_argument(
-        "-s", metavar="summoner", nargs="+", default=max, help="list of Summoner names",
+        "-s",
+        metavar="summoner",
+        nargs="+",
+        default=max,
+        help="list of Summoner names",
     )
 
     args = parser.parse_args()
@@ -221,4 +218,3 @@ if __name__ == "__main__":
     display_names = "', '".join(args.s)
     print(f"Running downloader on {args.m} mode for Summoner(s) '{display_names}'.")
     get_data(args.s, args.m)
-
